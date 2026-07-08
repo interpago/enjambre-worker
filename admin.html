@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Enjambre Admin</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#0d1117;color:#c9d1d9;padding:20px}
+h1{font-size:1.5rem;margin-bottom:8px;color:#58a6ff}
+h2{font-size:1.1rem;margin:24px 0 12px;color:#58a6ff;border-bottom:1px solid #30363d;padding-bottom:6px}
+.sub{color:#8b949e;font-size:.85rem;margin-bottom:20px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:24px}
+.card{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px}
+.card .label{font-size:.75rem;text-transform:uppercase;color:#8b949e;margin-bottom:4px}
+.card .value{font-size:1.6rem;font-weight:600}
+.card .value.green{color:#3fb950}
+.card .value.blue{color:#58a6ff}
+.card .value.yellow{color:#d29922}
+.card .value.purple{color:#bc8cff}
+.card .value.red{color:#f85149}
+.card .value.orange{color:#f0883e}
+table{width:100%;border-collapse:collapse;font-size:.875rem}
+th{text-align:left;padding:8px 12px;border-bottom:2px solid #30363d;color:#8b949e;text-transform:uppercase;font-size:.7rem}
+td{padding:8px 12px;border-bottom:1px solid #21262d}
+tr:hover td{background:#1c2128}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:.75rem;font-weight:600}
+.badge.super{background:#1a3a2a;color:#3fb950}
+.badge.consumer{background:#1a2d3a;color:#58a6ff}
+.badge.gpu{background:#2d1a3a;color:#bc8cff}
+.badge.enabled{background:#1a3a2a;color:#3fb950}
+.badge.disabled{background:#3a1a1a;color:#f85149}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+.dot.online{background:#3fb950}
+.dot.offline{background:#f85149}
+.uptime{color:#8b949e;font-size:.8rem;margin-top:4px}
+.error-msg{color:#f85149;text-align:center;padding:40px;font-size:1.1rem}
+.form-row{display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap}
+.form-row input{background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:8px 12px;color:#c9d1d9;font-size:.9rem}
+.form-row input:focus{outline:none;border-color:#58a6ff}
+.form-row button{background:#238636;border:none;border-radius:6px;padding:8px 16px;color:#fff;font-size:.9rem;cursor:pointer}
+.form-row button:hover{background:#2ea043}
+.form-row button.danger{background:#da3633}
+.form-row button.danger:hover{background:#f85149}
+.key-display{background:#1c2128;border:1px solid #30363d;border-radius:6px;padding:12px;margin-top:8px;font-family:monospace;word-break:break-all}
+.key-actions{display:flex;gap:6px}
+.key-actions button{padding:4px 10px;font-size:.8rem;border:none;border-radius:4px;cursor:pointer}
+.key-actions .enable-btn{background:#238636;color:#fff}
+.key-actions .disable-btn{background:#da3633;color:#fff}
+.key-actions .delete-btn{background:#da3633;color:#fff}
+</style>
+</head>
+<body>
+<h1>Enjambre Admin Panel</h1>
+<div class="sub" id="sub">Conectando...</div>
+<div class="stats" id="stats"></div>
+
+<h2>Workers</h2>
+<table>
+<thead><tr><th>ID</th><th>Rol</th><th>VRAM</th><th>RAM</th><th>Estado</th><th>Último ping</th></tr></thead>
+<tbody id="workers"></tbody>
+</table>
+
+<h2>API Keys</h2>
+<div class="form-row">
+  <input type="text" id="keyName" placeholder="Nombre del usuario" value="Usuario">
+  <input type="number" id="keyCredits" placeholder="Créditos iniciales" value="100" style="width:100px">
+  <button onclick="createKey()">Generar API Key</button>
+</div>
+<div id="newKeyDisplay"></div>
+<table>
+<thead><tr><th>Key</th><th>Usuario</th><th>Créditos</th><th>Estado</th><th>Creada</th><th>Acciones</th></tr></thead>
+<tbody id="keysBody"></tbody>
+</table>
+
+<div class="uptime" id="uptime"></div>
+<script>
+const fmt = (b) => b >= 1024 ? (b/1024).toFixed(1)+' GB' : b+' MB';
+const ago = (s) => s < 5 ? 'ahora' : s < 60 ? s+'s' : Math.floor(s/60)+'m '+s%60+'s';
+const roleBadge = (r) => {
+  if(r==='SuperNode') return '<span class="badge super">SuperNode</span>';
+  if(r==='Consumer')  return '<span class="badge consumer">Consumer</span>';
+  return '<span class="badge gpu">GpuProvider</span>';
+};
+
+async function createKey(){
+  const name = document.getElementById('keyName').value || 'Usuario';
+  const credits = parseInt(document.getElementById('keyCredits').value) || 100;
+  try{
+    const r = await fetch('/api/keys', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name,credits}) });
+    const d = await r.json();
+    if(d.status === 'ok'){
+      document.getElementById('newKeyDisplay').innerHTML = `<div class="key-display">Nueva API Key generada: <strong>${d.key}</strong></div>`;
+      loadKeys();
+    }
+  } catch(e){ console.error(e); }
+}
+
+async function loadKeys(){
+  try{
+    const r = await fetch('/api/keys');
+    const d = await r.json();
+    const keys = d.keys || [];
+    document.getElementById('keysBody').innerHTML = keys.map(k => `
+      <tr>
+        <td style="font-family:monospace;font-size:.8rem">${k.key.substring(0,16)}...</td>
+        <td>${k.name}</td>
+        <td style="color:#f0883e;font-weight:600">${k.credits}</td>
+        <td><span class="badge ${k.enabled ? 'enabled' : 'disabled'}">${k.enabled ? 'Activa' : 'Desactivada'}</span></td>
+        <td>${new Date(parseInt(k.created_at)*1000).toLocaleDateString()}</td>
+        <td class="key-actions">
+          <button class="${k.enabled ? 'disable-btn' : 'enable-btn'}" onclick="toggleKey('${k.key}')">${k.enabled ? 'Desactivar' : 'Activar'}</button>
+          <button class="delete-btn" onclick="deleteKey('${k.key}')">Eliminar</button>
+        </td>
+      </tr>
+    `).join('');
+  } catch(e){ console.error(e); }
+}
+
+async function toggleKey(key){
+  try{
+    await fetch('/api/keys/'+encodeURIComponent(key)+'/toggle', { method:'POST' });
+    loadKeys();
+  } catch(e){ console.error(e); }
+}
+
+async function deleteKey(key){
+  if(!confirm('¿Eliminar esta API key?')) return;
+  try{
+    await fetch('/api/keys/'+encodeURIComponent(key), { method:'DELETE' });
+    document.getElementById('newKeyDisplay').innerHTML = '';
+    loadKeys();
+  } catch(e){ console.error(e); }
+}
+
+async function poll(){
+  try{
+    const r = await fetch('/api/network-status');
+    const d = await r.json();
+    const st = d.status;
+    const ws = d.workers;
+    const sn = ws.filter(w=>w.role==='SuperNode').length;
+    const co = ws.filter(w=>w.role==='Consumer').length;
+    const gp = ws.filter(w=>w.role==='GpuProvider').length;
+    document.getElementById('sub').textContent =
+      `Enjambre activo — v${st.registry_version} — ${ws.length} worker(s) conectados`;
+    document.getElementById('stats').innerHTML = `
+      <div class="card"><div class="label">Workers</div><div class="value blue">${ws.length}</div></div>
+      <div class="card"><div class="label">SuperNodes</div><div class="value green">${sn}</div></div>
+      <div class="card"><div class="label">Consumers</div><div class="value blue">${co}</div></div>
+      <div class="card"><div class="label">GPU Providers</div><div class="value purple">${gp}</div></div>
+      <div class="card"><div class="label">VRAM Total</div><div class="value yellow">${fmt(st.total_vram_mb)}</div></div>
+      <div class="card"><div class="label">RAM Total</div><div class="value">${fmt(st.total_ram_mb)}</div></div>
+      <div class="card"><div class="label">Créditos</div><div class="value orange">${st.credit_pool}</div></div>
+    `;
+    document.getElementById('workers').innerHTML = ws.map(w => `
+      <tr>
+        <td>${w.id}</td>
+        <td>${roleBadge(w.role)}</td>
+        <td>${fmt(w.vram_free_mb)}</td>
+        <td>${fmt(w.ram_free_mb)}</td>
+        <td><span class="dot ${w.seconds_since_last_ping < 30 ? 'online' : 'offline'}"></span>${w.seconds_since_last_ping < 30 ? 'Online' : 'Offline'}</td>
+        <td>${ago(w.seconds_since_last_ping)}</td>
+      </tr>
+    `).join('');
+    document.getElementById('uptime').textContent = `Última actualización: ${new Date().toLocaleTimeString()}`;
+  } catch(e){
+    document.getElementById('sub').textContent = 'Error conectando al master';
+    document.getElementById('workers').innerHTML = '<tr><td colspan="6" class="error-msg">Error al obtener datos</td></tr>';
+  }
+}
+poll();
+setInterval(poll, 3000);
+loadKeys();
+</script>
+</body>
+</html>

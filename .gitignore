@@ -1,0 +1,27 @@
+# Rust
+target/
+*.lock
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Build artifacts
+*.exe
+*.dll
+*.pdb
+!src/**/*.rs
+
+# Environment
+.env
+*.local
+
+# Temp
+__pycache__/
+*.pyc
+
+# OS
+Thumbs.db
+.DS_Store

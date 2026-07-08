@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Worker Node</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: #1a1a2e;
+    color: #e0e0e0;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    user-select: none;
+    cursor: default;
+  }
+  #container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    padding: 12px 16px;
+  }
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    -webkit-app-region: drag;
+  }
+  .header h1 {
+    font-size: 13px;
+    font-weight: 600;
+    color: #00c853;
+    letter-spacing: 0.5px;
+  }
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .status-dot.online { background: #00c853; box-shadow: 0 0 6px #00c853; }
+  .status-dot.offline { background: #666; }
+  .mode-badge {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-bottom: 10px;
+  }
+  .mode-badge.gpu { background: #1b5e20; color: #a5d6a7; }
+  .mode-badge.cpu { background: #e65100; color: #ffcc80; }
+  .mode-badge.connecting { background: #1565c0; color: #90caf9; }
+  .row {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 0;
+    font-size: 12px;
+    border-bottom: 1px solid #2a2a4a;
+  }
+  .row:last-child { border-bottom: none; }
+  .label { color: #888; }
+  .value { color: #e0e0e0; font-weight: 500; }
+  .value.highlight { color: #00c853; }
+  .footer {
+    margin-top: auto;
+    text-align: center;
+    font-size: 10px;
+    color: #555;
+    padding-top: 8px;
+    -webkit-app-region: drag;
+  }
+  .close-btn {
+    position: absolute;
+    top: 4px;
+    right: 8px;
+    font-size: 16px;
+    color: #666;
+    cursor: pointer;
+    -webkit-app-region: no-drag;
+  }
+  .close-btn:hover { color: #ff5252; }
+</style>
+</head>
+<body>
+<div id="container">
+  <div class="header">
+    <h1>⬡ Enjambre</h1>
+    <span class="status-dot offline" id="statusDot"></span>
+  </div>
+  <span class="mode-badge connecting" id="modeBadge">Conectando...</span>
+  <div id="rows">
+    <div class="row"><span class="label">Créditos</span><span class="value" id="credits">0</span></div>
+    <div class="row"><span class="label">Total</span><span class="value" id="totalBytes">0 KB</span></div>
+    <div class="row"><span class="label">Tokens estimados</span><span class="value" id="tokens">0</span></div>
+    <div class="row"><span class="label">Sesión</span><span class="value" id="sessionTime">00:00:00</span></div>
+    <div class="row"><span class="label">GPU</span><span class="value" id="gpuInfo">—</span></div>
+    <div class="row"><span class="label">VRAM</span><span class="value" id="vramInfo">—</span></div>
+  </div>
+  <div class="footer">Click para cerrar</div>
+</div>
+<span class="close-btn" id="closeBtn">×</span>
+
+<script>
+  let tauriInvoke;
+  if (window.__TAURI_INTERNALS__) {
+    tauriInvoke = window.__TAURI_INTERNALS__.invoke;
+  } else {
+    tauriInvoke = async () => ({ ready: false });
+  }
+
+  function formatBytes(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(0) + ' KB';
+    return (bytes / 1048576).toFixed(1) + ' MB';
+  }
+
+  function formatTime(secs) {
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    const s = secs % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  }
+
+  async function refresh() {
+    try {
+      const status = await tauriInvoke('get_panel_status');
+      const ready = status.ready;
+
+      document.getElementById('statusDot').className = 'status-dot ' + (ready ? 'online' : 'offline');
+
+      const badge = document.getElementById('modeBadge');
+      badge.textContent = ready ? status.mode : 'Conectando...';
+      badge.className = 'mode-badge ' + (ready ? (status.mode === 'GPU' ? 'gpu' : 'cpu') : 'connecting');
+
+      document.getElementById('credits').textContent = status.credits;
+      document.getElementById('credits').className = 'value highlight';
+      document.getElementById('totalBytes').textContent = formatBytes(status.total_bytes);
+      document.getElementById('tokens').textContent = status.estimated_tokens.toLocaleString();
+      document.getElementById('sessionTime').textContent = formatTime(status.session_secs);
+      document.getElementById('gpuInfo').textContent = status.hardware || '—';
+      document.getElementById('vramInfo').textContent = status.vram_mib || '—';
+    } catch (e) {
+      console.error('Error fetching status:', e);
+    }
+  }
+
+  // Click en container o close → ocultar ventana via Tauri
+  document.getElementById('closeBtn').addEventListener('click', async () => {
+    try { await tauriInvoke('toggle_panel'); } catch (e) {}
+  });
+  document.querySelector('.footer').addEventListener('click', async () => {
+    try { await tauriInvoke('toggle_panel'); } catch (e) {}
+  });
+
+  refresh();
+  setInterval(refresh, 2000);
+</script>
+</body>
+</html>
