@@ -477,13 +477,9 @@ async fn get_network_status(
     })))
 }
 
-async fn admin_dashboard(
-    State(state): State<ApiState>,
-    headers: axum::http::HeaderMap,
-) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
-    require_admin(&state, &headers)?;
+async fn admin_dashboard() -> impl IntoResponse {
     let html = include_str!("../admin.html");
-    Ok(([(header::CONTENT_TYPE, "text/html; charset=utf-8")], html))
+    ([(header::CONTENT_TYPE, "text/html; charset=utf-8")], html)
 }
 
 // ─── Key Management Handlers ─────────────────────────────────────────────────

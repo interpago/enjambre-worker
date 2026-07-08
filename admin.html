@@ -236,14 +236,13 @@ async function poll(){
   }
 }
 
-// Si ya hay clave guardada, saltar login
+// Si ya hay clave guardada, iniciar monitoreo
 if (getAdminKey()) {
   document.getElementById('loginOverlay').style.display = 'none';
+  poll();
+  setInterval(poll, 3000);
+  loadKeys();
 }
-
-poll();
-setInterval(poll, 3000);
-loadKeys();
 </script>
 </body>
 </html>
