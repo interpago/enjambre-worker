@@ -48,9 +48,30 @@ tr:hover td{background:#1c2128}
 .key-actions .enable-btn{background:#238636;color:#fff}
 .key-actions .disable-btn{background:#da3633;color:#fff}
 .key-actions .delete-btn{background:#da3633;color:#fff}
+/* Login overlay */
+#loginOverlay{position:fixed;top:0;left:0;right:0;bottom:0;background:#0d1117;display:flex;align-items:center;justify-content:center;z-index:9999}
+#loginBox{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:32px;width:340px;text-align:center}
+#loginBox h1{font-size:1.3rem;margin-bottom:4px}
+#loginBox p{color:#8b949e;font-size:.85rem;margin-bottom:20px}
+#loginBox input{width:100%;padding:10px 14px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#c9d1d9;font-size:1rem;margin-bottom:12px}
+#loginBox input:focus{outline:none;border-color:#58a6ff}
+#loginBox button{width:100%;padding:10px;background:#238636;border:none;border-radius:6px;color:#fff;font-size:1rem;cursor:pointer}
+#loginBox button:hover{background:#2ea043}
+#loginBox .error{color:#f85149;font-size:.85rem;margin-top:8px}
 </style>
 </head>
 <body>
+
+<div id="loginOverlay">
+  <div id="loginBox">
+    <h1>Enjambre Admin</h1>
+    <p>Ingresa la contraseña de administrador</p>
+    <input type="password" id="passwordInput" placeholder="Contraseña" autofocus>
+    <button onclick="login()">Acceder</button>
+    <div class="error" id="loginError"></div>
+  </div>
+</div>
+
 <h1>Enjambre Admin Panel</h1>
 <div class="sub" id="sub">Conectando...</div>
 <div class="stats" id="stats"></div>
@@ -83,11 +104,56 @@ const roleBadge = (r) => {
   return '<span class="badge gpu">GpuProvider</span>';
 };
 
+function getAdminKey() { return sessionStorage.getItem('adminKey'); }
+
+function setAdminKey(k) { sessionStorage.setItem('adminKey', k); }
+
+function clearAdminKey() { sessionStorage.removeItem('adminKey'); }
+
+const authHeaders = () => {
+  const k = getAdminKey();
+  return k ? { 'X-Admin-Key': k } : {};
+};
+
+async function apiFetch(url, opts = {}) {
+  opts.headers = { ...opts.headers, ...authHeaders() };
+  const r = await fetch(url, opts);
+  if (r.status === 401) {
+    clearAdminKey();
+    document.getElementById('loginOverlay').style.display = 'flex';
+    document.getElementById('loginError').textContent = 'Contraseña incorrecta o sesión expirada.';
+    throw new Error('Unauthorized');
+  }
+  return r;
+}
+
+function login() {
+  const pw = document.getElementById('passwordInput').value;
+  if (!pw) return;
+  setAdminKey(pw);
+  document.getElementById('loginError').textContent = '';
+  // probar que la clave funciona
+  apiFetch('/api/network-status').then(r => {
+    if (r.ok) {
+      document.getElementById('loginOverlay').style.display = 'none';
+      loadKeys();
+      poll();
+    }
+  }).catch(() => {
+    clearAdminKey();
+    document.getElementById('loginError').textContent = 'Contraseña incorrecta.';
+  });
+}
+
+document.getElementById('passwordInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') login();
+});
+
 async function createKey(){
   const name = document.getElementById('keyName').value || 'Usuario';
   const credits = parseInt(document.getElementById('keyCredits').value) || 100;
   try{
-    const r = await fetch('/api/keys', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name,credits}) });
+    const r = await apiFetch('/api/keys', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name,credits}) });
     const d = await r.json();
     if(d.status === 'ok'){
       document.getElementById('newKeyDisplay').innerHTML = `<div class="key-display">Nueva API Key generada: <strong>${d.key}</strong></div>`;
@@ -98,7 +164,7 @@ async function createKey(){
 
 async function loadKeys(){
   try{
-    const r = await fetch('/api/keys');
+    const r = await apiFetch('/api/keys');
     const d = await r.json();
     const keys = d.keys || [];
     document.getElementById('keysBody').innerHTML = keys.map(k => `
@@ -119,7 +185,7 @@ async function loadKeys(){
 
 async function toggleKey(key){
   try{
-    await fetch('/api/keys/'+encodeURIComponent(key)+'/toggle', { method:'POST' });
+    await apiFetch('/api/keys/'+encodeURIComponent(key)+'/toggle', { method:'POST' });
     loadKeys();
   } catch(e){ console.error(e); }
 }
@@ -127,7 +193,7 @@ async function toggleKey(key){
 async function deleteKey(key){
   if(!confirm('¿Eliminar esta API key?')) return;
   try{
-    await fetch('/api/keys/'+encodeURIComponent(key), { method:'DELETE' });
+    await apiFetch('/api/keys/'+encodeURIComponent(key), { method:'DELETE' });
     document.getElementById('newKeyDisplay').innerHTML = '';
     loadKeys();
   } catch(e){ console.error(e); }
@@ -135,7 +201,7 @@ async function deleteKey(key){
 
 async function poll(){
   try{
-    const r = await fetch('/api/network-status');
+    const r = await apiFetch('/api/network-status');
     const d = await r.json();
     const st = d.status;
     const ws = d.workers;
@@ -169,6 +235,12 @@ async function poll(){
     document.getElementById('workers').innerHTML = '<tr><td colspan="6" class="error-msg">Error al obtener datos</td></tr>';
   }
 }
+
+// Si ya hay clave guardada, saltar login
+if (getAdminKey()) {
+  document.getElementById('loginOverlay').style.display = 'none';
+}
+
 poll();
 setInterval(poll, 3000);
 loadKeys();

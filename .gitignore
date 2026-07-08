@@ -14,6 +14,9 @@ target/
 *.pdb
 !src/**/*.rs
 
+# Machine-specific config (contains public IP, admin password, etc.)
+config.toml
+
 # Environment
 .env
 *.local

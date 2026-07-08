@@ -40,6 +40,8 @@ pub struct MasterConfig {
     pub models: Vec<ModelEntry>,
     #[serde(default = "default_public_ip")]
     pub public_ip: String,
+    #[serde(default)]
+    pub admin_password: String,
 }
 
 fn default_public_ip() -> String {
@@ -77,6 +79,7 @@ pub fn load_config(exe_dir: &Path) -> MasterConfig {
     MasterConfig {
         models: vec![],
         public_ip: default_public_ip(),
+        admin_password: String::new(),
     }
 }
 

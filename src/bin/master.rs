@@ -74,6 +74,7 @@ async fn main() {
         credit_pool: Arc::new(AtomicU64::new(initial_pool)),
         key_manager: Arc::new(KeyManager::new(Some(exe_dir.join("keys.json")))),
         worker_bin_path: Some("/home/ubuntu/worker-node.exe".to_string()),
+        admin_password: config.admin_password.clone(),
     };
 
     let router = api::build_router(api_state);

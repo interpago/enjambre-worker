@@ -56,6 +56,8 @@ pub struct ApiState {
     pub key_manager: Arc<KeyManager>,
     /// Ruta al binario worker-node.exe para descarga.
     pub worker_bin_path: Option<String>,
+    /// Contraseña para acceder al panel de admin.
+    pub admin_password: String,
 }
 
 // ─── Router ────────────────────────────────────────────────────────────────────
@@ -81,6 +83,32 @@ pub fn build_router(state: ApiState) -> Router {
                 .allow_headers(tower_http::cors::Any),
         )
         .with_state(state)
+}
+
+// ─── Admin Auth Helper ─────────────────────────────────────────────────────────
+
+const ADMIN_KEY_HEADER: &str = "x-admin-key";
+
+fn require_admin(state: &ApiState, headers: &axum::http::HeaderMap) -> Result<(), (StatusCode, Json<Value>)> {
+    if state.admin_password.is_empty() {
+        return Ok(());
+    }
+    let provided = headers
+        .get(ADMIN_KEY_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    if provided == state.admin_password {
+        return Ok(());
+    }
+    Err((
+        StatusCode::UNAUTHORIZED,
+        Json(json!({
+            "error": {
+                "message": "Se requiere X-Admin-Key válida para acceder al panel de administración.",
+                "type": "unauthorized"
+            }
+        })),
+    ))
 }
 
 // ─── Handlers ──────────────────────────────────────────────────────────────────
@@ -371,8 +399,10 @@ Connection: close\r\n\
 
 async fn add_credits(
     State(state): State<ApiState>,
+    headers: axum::http::HeaderMap,
     body: axum::body::Bytes,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    require_admin(&state, &headers)?;
     let req: Value = serde_json::from_slice(&body).map_err(|_| {
         (
             StatusCode::BAD_REQUEST,
@@ -401,7 +431,9 @@ async fn add_credits(
 
 async fn get_network_status(
     State(state): State<ApiState>,
-) -> Json<Value> {
+    headers: axum::http::HeaderMap,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    require_admin(&state, &headers)?;
     let workers = state.registry.get_active_workers();
     let version = state.registry.version();
     let sn_id = state.registry.get_super_node_id();
@@ -431,7 +463,7 @@ async fn get_network_status(
         })
         .collect();
 
-    Json(json!({
+    Ok(Json(json!({
         "status": NetworkStatus {
             total_vram_mb,
             total_ram_mb,
@@ -442,27 +474,35 @@ async fn get_network_status(
             credit_pool,
         },
         "workers": details,
-    }))
+    })))
 }
 
-async fn admin_dashboard() -> impl IntoResponse {
+async fn admin_dashboard(
+    State(state): State<ApiState>,
+    headers: axum::http::HeaderMap,
+) -> Result<impl IntoResponse, (StatusCode, Json<Value>)> {
+    require_admin(&state, &headers)?;
     let html = include_str!("../admin.html");
-    ([(header::CONTENT_TYPE, "text/html; charset=utf-8")], html)
+    Ok(([(header::CONTENT_TYPE, "text/html; charset=utf-8")], html))
 }
 
 // ─── Key Management Handlers ─────────────────────────────────────────────────
 
 async fn list_keys(
     State(state): State<ApiState>,
-) -> Json<Value> {
+    headers: axum::http::HeaderMap,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    require_admin(&state, &headers)?;
     let keys = state.key_manager.list_keys();
-    Json(json!({ "keys": keys }))
+    Ok(Json(json!({ "keys": keys })))
 }
 
 async fn create_key(
     State(state): State<ApiState>,
+    headers: axum::http::HeaderMap,
     body: axum::body::Bytes,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    require_admin(&state, &headers)?;
     let req: Value = serde_json::from_slice(&body).map_err(|_| {
         (StatusCode::BAD_REQUEST, Json(json!({"error": "JSON inválido"})))
     })?;
@@ -474,17 +514,21 @@ async fn create_key(
 
 async fn delete_key(
     State(state): State<ApiState>,
+    headers: axum::http::HeaderMap,
     axum::extract::Path(key): axum::extract::Path<String>,
-) -> Json<Value> {
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    require_admin(&state, &headers)?;
     let deleted = state.key_manager.delete_key(&key);
-    Json(json!({ "status": if deleted { "ok" } else { "not_found" } }))
+    Ok(Json(json!({ "status": if deleted { "ok" } else { "not_found" } })))
 }
 
 async fn add_key_credits(
     State(state): State<ApiState>,
+    headers: axum::http::HeaderMap,
     axum::extract::Path(key): axum::extract::Path<String>,
     body: axum::body::Bytes,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    require_admin(&state, &headers)?;
     let req: Value = serde_json::from_slice(&body).map_err(|_| {
         (StatusCode::BAD_REQUEST, Json(json!({"error": "JSON inválido"})))
     })?;
@@ -503,13 +547,15 @@ async fn add_key_credits(
 
 async fn toggle_key(
     State(state): State<ApiState>,
+    headers: axum::http::HeaderMap,
     axum::extract::Path(key): axum::extract::Path<String>,
-) -> Json<Value> {
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    require_admin(&state, &headers)?;
     let ok = state.key_manager.toggle_key(&key);
     if ok {
         let entry = state.key_manager.get_key(&key);
-        Json(json!({ "status": "ok", "enabled": entry.map(|e| e.enabled).unwrap_or(false) }))
+        Ok(Json(json!({ "status": "ok", "enabled": entry.map(|e| e.enabled).unwrap_or(false) })))
     } else {
-        Json(json!({ "status": "not_found" }))
+        Ok(Json(json!({ "status": "not_found" })))
     }
 }
